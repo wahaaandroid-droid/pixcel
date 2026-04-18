@@ -92,3 +92,35 @@ export function isSolved(
   }
   return true
 }
+
+/** プレイヤーの黒マスだけを見た二値グリッド（空白・×は白扱い） */
+export function cellsToFilledGrid(cells: CellState[][]): boolean[][] {
+  return cells.map((row) => row.map((c) => c === 1))
+}
+
+function hintsEqual(a: number[], b: number[]): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false
+  return true
+}
+
+/**
+ * 完成判定：画像の「答え」とは独立し、行・列ヒントと一致する塗りなら完成。
+ * （自動生成で多解のときも、ヒントどおり埋めれば完成になる）
+ */
+export function isCompleteByHints(
+  rowHints: number[][],
+  colHints: number[][],
+  cells: CellState[][],
+): boolean {
+  const g = cellsToFilledGrid(cells)
+  const n = g.length
+  for (let r = 0; r < n; r++) {
+    if (!hintsEqual(lineHints(g[r]), rowHints[r])) return false
+  }
+  for (let c = 0; c < n; c++) {
+    const col = g.map((row) => row[c])
+    if (!hintsEqual(lineHints(col), colHints[c])) return false
+  }
+  return true
+}

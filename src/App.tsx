@@ -11,13 +11,14 @@ import {
   columnHints,
   createEmptyGrid,
   imageToSolutionGrid,
-  isSolved,
+  isCompleteByHints,
   lineHints,
   maxHintCount,
   nextStateForLongPress,
   nextStateFull,
   nextStateXMode,
 } from './picross'
+import { countSolutionsCapped } from './solver'
 
 /** 盤の一辺のマス数（画像はこのサイズにリサイズされます） */
 const GRID_OPTIONS = [
@@ -121,9 +122,33 @@ export default function App() {
   }, [gridSize, threshold, hasImage, applyPuzzleFromImage])
 
   const solved = useMemo(() => {
-    if (!solution || !cells) return false
-    return isSolved(solution, cells)
-  }, [solution, cells])
+    if (!rowHints || !colHints || !cells) return false
+    return isCompleteByHints(rowHints, colHints, cells)
+  }, [rowHints, colHints, cells])
+
+  const [clueUniqueness, setClueUniqueness] = useState<
+    'idle' | 'checking' | 'unique' | 'multi' | 'skipped'
+  >('idle')
+
+  useEffect(() => {
+    if (!rowHints || !colHints || !solution) {
+      setClueUniqueness('idle')
+      return
+    }
+    const n = solution.length
+    if (n > 18) {
+      setClueUniqueness('skipped')
+      return
+    }
+    setClueUniqueness('checking')
+    const t = window.setTimeout(() => {
+      const cnt = countSolutionsCapped(rowHints, colHints, n, 2, 400)
+      if (cnt < 0 || cnt === 0) setClueUniqueness('skipped')
+      else if (cnt > 1) setClueUniqueness('multi')
+      else setClueUniqueness('unique')
+    }, 0)
+    return () => window.clearTimeout(t)
+  }, [rowHints, colHints, solution])
 
   const boardWrapRef = useRef<HTMLDivElement>(null)
   const [cellPx, setCellPx] = useState(22)
@@ -350,7 +375,22 @@ export default function App() {
 
           <p className="hint">
             タップで空白 → 黒 → ×。長押し後にドラッグで同じ状態をまとめて塗れます。
+            完成は<strong>行・列の数字どおりに黒マスが並んだとき</strong>です（画像の模様と一致しない場合でもヒントどおりなら完成）。
           </p>
+
+          {clueUniqueness === 'multi' && (
+            <p className="warn-box">
+              この問題は、同じヒントを満たす別の解が存在する可能性があります。論理だけでは元画像どおりに埋められないことがあります。
+            </p>
+          )}
+          {clueUniqueness === 'skipped' && hasImage && (
+            <p className="info-box">
+              盤が大きいため、ヒントが1通りに決まるかの自動チェックを省略しています。
+            </p>
+          )}
+          {clueUniqueness === 'unique' && hasImage && (
+            <p className="ok-box">このヒントでは、解は理論上1通りです。</p>
+          )}
 
           <button
             type="button"
@@ -550,6 +590,33 @@ export default function App() {
         .reveal-btn:disabled {
           opacity: 0.45;
           cursor: not-allowed;
+        }
+        .warn-box {
+          margin: 0;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: #fef3c7;
+          border: 1px solid #d97706;
+          color: #78350f;
+          font-size: 0.82rem;
+        }
+        .info-box {
+          margin: 0;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: #e0f2fe;
+          border: 1px solid #0284c7;
+          color: #0c4a6e;
+          font-size: 0.82rem;
+        }
+        .ok-box {
+          margin: 0;
+          padding: 10px 12px;
+          border-radius: 10px;
+          background: #dcfce7;
+          border: 1px solid #16a34a;
+          color: #14532d;
+          font-size: 0.82rem;
         }
         .placeholder {
           align-self: center;

@@ -8,6 +8,7 @@ import {
 } from 'react'
 import {
   CellState,
+  applyRandomSingleHint,
   columnHints,
   createEmptyGrid,
   imageToSolutionGrid,
@@ -18,7 +19,7 @@ import {
   nextStateFull,
   nextStateXMode,
 } from './picross'
-import { countSolutionsCapped } from './solver'
+import { applyLogicalDeductions, countSolutionsCapped } from './solver'
 
 /** 盤の一辺のマス数（画像はこのサイズにリサイズされます） */
 const GRID_OPTIONS = [
@@ -129,6 +130,14 @@ export default function App() {
   const [clueUniqueness, setClueUniqueness] = useState<
     'idle' | 'checking' | 'unique' | 'multi' | 'skipped'
   >('idle')
+
+  const [deductionNotice, setDeductionNotice] = useState<string | null>(null)
+  const [hintNotice, setHintNotice] = useState<string | null>(null)
+
+  useEffect(() => {
+    setDeductionNotice(null)
+    setHintNotice(null)
+  }, [solution])
 
   useEffect(() => {
     if (!rowHints || !colHints || !solution) {
@@ -244,7 +253,50 @@ export default function App() {
         row.map((black) => (black ? 1 : 0) as CellState),
       ),
     )
+    setDeductionNotice(null)
+    setHintNotice(null)
   }, [solution])
+
+  /** 画像正解に合わせてランダムに1マスだけ黒または×を入れる */
+  const applyOneCellHint = useCallback(() => {
+    if (!solution || !cells || !rowHints || !colHints) return
+    setDeductionNotice(null)
+    if (isCompleteByHints(rowHints, colHints, cells)) {
+      setHintNotice('数字のヒントどおりに完成しています。')
+      return
+    }
+    const next = applyRandomSingleHint(solution, cells)
+    if (!next) {
+      setHintNotice('すでに画像の答えと一致しています。')
+      return
+    }
+    setCells(next)
+    setHintNotice(
+      '画像から作った答えに合わせ、ランダムな1マスを黒塗りまたは×で入れました。',
+    )
+  }, [solution, cells, rowHints, colHints])
+
+  /** 行・列の論理だけで確定するマスに黒／×を一括入力 */
+  const applyDeductions = useCallback(() => {
+    if (!cells || !rowHints || !colHints) return
+    setHintNotice(null)
+    const beforeZeros = cells.flat().filter((x) => x === 0).length
+    const next = applyLogicalDeductions(cells, rowHints, colHints)
+    if (next === null) {
+      setDeductionNotice(
+        '論理だけでは進められない・矛盾・または行の候補が多すぎて省略されました。',
+      )
+      return
+    }
+    const afterZeros = next.flat().filter((x) => x === 0).length
+    const filled = beforeZeros - afterZeros
+    setCells(next)
+    setDeductionNotice(
+      filled === 0
+        ? 'いま新たに確定できるマスはありません。'
+        : `論理で確定した ${filled} マスに黒塗りまたは×を入れました。`,
+    )
+  }, [cells, rowHints, colHints])
 
   const hitCell = useCallback(
     (clientX: number, clientY: number): [number, number] | null => {
@@ -394,12 +446,38 @@ export default function App() {
 
           <button
             type="button"
+            className="deduce-btn"
+            onClick={applyDeductions}
+            disabled={!cells || !rowHints}
+          >
+            確定マスを自動入力（論理ヒント）
+          </button>
+
+          <button
+            type="button"
+            className="hint-1-btn"
+            onClick={applyOneCellHint}
+            disabled={!solution || !cells}
+          >
+            ヒントを1マス入れる
+          </button>
+          <p className="hint-1-note">
+            論理が難しいとき用です。画像から作った正解に合わせ、黒か×を1マスだけ自動で入れます（何度でも可）。
+          </p>
+
+          <button
+            type="button"
             className="reveal-btn"
             onClick={revealSolution}
             disabled={!solution}
           >
             答えを一括表示（テスト用）
           </button>
+
+          {hintNotice && <p className="deduce-notice">{hintNotice}</p>}
+          {deductionNotice && (
+            <p className="deduce-notice">{deductionNotice}</p>
+          )}
         </aside>
 
         <div className="board-area" ref={boardWrapRef}>
@@ -576,9 +654,45 @@ export default function App() {
           font-size: 0.8rem;
           color: #64748b;
         }
-        .reveal-btn {
+        .deduce-btn {
           width: 100%;
           margin-top: 4px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid #2563eb;
+          background: #eff6ff;
+          color: #1e3a8a;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .deduce-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+        .hint-1-btn {
+          width: 100%;
+          margin-top: 8px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid #7c3aed;
+          background: #f5f3ff;
+          color: #4c1d95;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .hint-1-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
+        }
+        .hint-1-note {
+          margin: 4px 0 0;
+          font-size: 0.78rem;
+          color: #64748b;
+          line-height: 1.4;
+        }
+        .reveal-btn {
+          width: 100%;
+          margin-top: 8px;
           padding: 10px 12px;
           border-radius: 10px;
           border: 1px solid #a16207;
@@ -590,6 +704,12 @@ export default function App() {
         .reveal-btn:disabled {
           opacity: 0.45;
           cursor: not-allowed;
+        }
+        .deduce-notice {
+          margin: 0;
+          font-size: 0.82rem;
+          color: #475569;
+          line-height: 1.45;
         }
         .warn-box {
           margin: 0;

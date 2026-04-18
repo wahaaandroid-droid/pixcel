@@ -1,5 +1,10 @@
 /** 行・列ヒントからの整合チェック・多解検出（小〜中盤面向け） */
 
+import type { CellState } from './picross'
+
+/** 行ごとの候補がこれを超えると論理埋めを諦める（フリーズ防止） */
+const MAX_LINE_PATTERNS_FOR_DEDUCE = 8000
+
 export function minLengthFromBlocks(blocks: number[], i: number): number {
   if (i >= blocks.length) return 0
   let s = blocks[i]
@@ -99,4 +104,85 @@ export function countSolutionsCapped(
 
   dfsRow(0)
   return count
+}
+
+/**
+ * 1行分：ヒントと既知マス（黒=1、×=白、空白=未確定）から、全候補で一致するマスだけ埋める。
+ * 候補0件は矛盾、候補過多は null（未対応）。
+ */
+export function deduceSingleLine(
+  hints: number[],
+  line: CellState[],
+): CellState[] | null {
+  const n = line.length
+  const patterns = enumerateLines(hints, n)
+  if (patterns.length > MAX_LINE_PATTERNS_FOR_DEDUCE) return null
+
+  const partial = line.map((c) =>
+    c === 1 ? true : c === 2 ? false : null,
+  ) as (boolean | null)[]
+
+  const filtered = patterns.filter((p) => {
+    for (let i = 0; i < n; i++) {
+      if (partial[i] === true && !p[i]) return false
+      if (partial[i] === false && p[i]) return false
+    }
+    return true
+  })
+  if (filtered.length === 0) return null
+
+  const result = line.slice()
+  for (let i = 0; i < n; i++) {
+    if (line[i] !== 0) continue
+    const v = filtered[0][i]
+    if (filtered.every((p) => p[i] === v)) {
+      result[i] = v ? 1 : 2
+    }
+  }
+  return result
+}
+
+/**
+ * 行→列を交互に論理埋めし、変化がなくなるまで繰り返す。
+ * null = 矛盾、または行候補が多すぎて省略。
+ */
+export function applyLogicalDeductions(
+  cells: CellState[][],
+  rowHints: number[][],
+  colHints: number[][],
+): CellState[][] | null {
+  const n = cells.length
+  let cur = cells.map((r) => r.slice())
+  let changed = true
+  let rounds = 0
+  const maxRounds = n * n + 32
+
+  while (changed && rounds++ < maxRounds) {
+    changed = false
+
+    for (let r = 0; r < n; r++) {
+      const d = deduceSingleLine(rowHints[r], cur[r])
+      if (d === null) return null
+      for (let c = 0; c < n; c++) {
+        if (cur[r][c] === 0 && d[c] !== 0) {
+          cur[r][c] = d[c]
+          changed = true
+        }
+      }
+    }
+
+    for (let c = 0; c < n; c++) {
+      const colLine = cur.map((row) => row[c])
+      const d = deduceSingleLine(colHints[c], colLine)
+      if (d === null) return null
+      for (let r = 0; r < n; r++) {
+        if (cur[r][c] === 0 && d[r] !== 0) {
+          cur[r][c] = d[r]
+          changed = true
+        }
+      }
+    }
+  }
+
+  return cur
 }

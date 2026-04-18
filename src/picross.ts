@@ -124,3 +124,34 @@ export function isCompleteByHints(
   }
   return true
 }
+
+type HintPick = { r: number; c: number; value: CellState }
+
+/**
+ * 画像から作った正解に合わせて、まだ合っていないマスから1つだけランダムに埋める。
+ * （黒は黒塗り、白は×で示す。空白の白マスにも×を入れる候補に含める）
+ */
+export function applyRandomSingleHint(
+  solution: boolean[][],
+  cells: CellState[][],
+): CellState[][] | null {
+  const n = solution.length
+  const picks: HintPick[] = []
+  for (let r = 0; r < n; r++) {
+    for (let c = 0; c < n; c++) {
+      const sol = solution[r][c]
+      const u = cells[r][c]
+      if (sol) {
+        if (u !== 1) picks.push({ r, c, value: 1 })
+      } else {
+        if (u === 1) picks.push({ r, c, value: 2 })
+        else if (u === 0) picks.push({ r, c, value: 2 })
+      }
+    }
+  }
+  if (picks.length === 0) return null
+  const { r, c, value } = picks[Math.floor(Math.random() * picks.length)]
+  const next = cells.map((row) => row.slice())
+  next[r][c] = value
+  return next
+}

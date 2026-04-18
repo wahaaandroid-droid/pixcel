@@ -22,6 +22,21 @@ import {
 const GRID_OPTIONS = [10, 15, 20] as const
 const LONG_PRESS_MS = 400
 
+const CELL_BORDER_THIN = 1
+const CELL_BORDER_THICK = 3
+
+/** 5マスごとの区切り（左辺・上辺のみ太くし、隣接セルで線が二重にならないようにする） */
+function cellMajorBorderWidths(ri: number, ci: number) {
+  return {
+    borderLeftWidth:
+      ci > 0 && ci % 5 === 0 ? CELL_BORDER_THICK : CELL_BORDER_THIN,
+    borderTopWidth:
+      ri > 0 && ri % 5 === 0 ? CELL_BORDER_THICK : CELL_BORDER_THIN,
+    borderRightWidth: CELL_BORDER_THIN,
+    borderBottomWidth: CELL_BORDER_THIN,
+  }
+}
+
 function useLatest<T>(value: T) {
   const ref = useRef(value)
   ref.current = value
@@ -377,6 +392,9 @@ export default function App() {
                         height: cellPx,
                         gridColumn: ci + 2,
                         gridRow: ri + 2,
+                        borderStyle: 'solid',
+                        borderColor: '#64748b',
+                        ...cellMajorBorderWidths(ri, ci),
                       }}
                       data-cr
                       data-r={ri}
@@ -537,7 +555,7 @@ export default function App() {
           border-right: 1px solid #94a3b8;
         }
         .cell {
-          border: 1px solid #64748b;
+          box-sizing: border-box;
           padding: 0;
           margin: 0;
           background: #fff;

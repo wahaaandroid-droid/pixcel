@@ -19,12 +19,16 @@ import {
   nextStateFull,
   nextStateXMode,
 } from './picross'
+import {
+  PRESET_GRID_SIZES,
+  getAllPresetSides,
+  presetToGrid,
+  presetsForSide,
+} from './presets'
 import { applyLogicalDeductions, countSolutionsCapped } from './solver'
 
-/** 盤の一辺のマス数（画像はこのサイズにリサイズされます） */
-const GRID_OPTIONS = [
-  5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45, 50,
-] as const
+/** 盤の一辺のマス数（画像・プリセットで共通） */
+const GRID_OPTIONS = PRESET_GRID_SIZES
 const LONG_PRESS_MS = 400
 
 const CELL_BORDER_THIN = 1
@@ -52,6 +56,11 @@ export default function App() {
   const [gridSize, setGridSize] = useState<(typeof GRID_OPTIONS)[number]>(15)
   const [threshold, setThreshold] = useState(128)
   const [xMode, setXMode] = useState(false)
+  const [sourceMode, setSourceMode] = useState<'image' | 'preset'>('preset')
+  const [presetSide, setPresetSide] = useState(10)
+  const [selectedPresetId, setSelectedPresetId] = useState(
+    () => presetsForSide(10)[0]?.id ?? '',
+  )
 
   const imgRef = useRef<HTMLImageElement | null>(null)
   const imgUrlRef = useRef<string | null>(null)
@@ -88,6 +97,7 @@ export default function App() {
     (file: File | null) => {
       setLoadError(null)
       if (!file) return
+      setSourceMode('image')
       if (imgUrlRef.current) {
         URL.revokeObjectURL(imgUrlRef.current)
         imgUrlRef.current = null
@@ -117,10 +127,37 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (sourceMode !== 'preset') return
+    let def = presetsForSide(presetSide).find((p) => p.id === selectedPresetId)
+    if (!def) {
+      def = presetsForSide(presetSide)[0]
+      if (!def) return
+      setSelectedPresetId(def.id)
+      return
+    }
+    try {
+      const sol = presetToGrid(def)
+      setSolution(sol)
+      setCells(createEmptyGrid(sol.length))
+      setLoadError(null)
+    } catch {
+      setLoadError('プリセットの読み込みに失敗しました')
+    }
+  }, [sourceMode, presetSide, selectedPresetId])
+
+  useEffect(() => {
+    if (sourceMode !== 'image' || !hasImage) return
     const img = imgRef.current
-    if (!img || !hasImage) return
+    if (!img) return
     applyPuzzleFromImage(img, gridSize, threshold)
-  }, [gridSize, threshold, hasImage, applyPuzzleFromImage])
+  }, [sourceMode, gridSize, threshold, hasImage, applyPuzzleFromImage])
+
+  useEffect(() => {
+    if (sourceMode === 'image' && !hasImage) {
+      setSolution(null)
+      setCells(null)
+    }
+  }, [sourceMode, hasImage])
 
   const solved = useMemo(() => {
     if (!rowHints || !colHints || !cells) return false
@@ -267,14 +304,16 @@ export default function App() {
     }
     const next = applyRandomSingleHint(solution, cells)
     if (!next) {
-      setHintNotice('すでに画像の答えと一致しています。')
+      setHintNotice('すでに正解の模様と一致しています。')
       return
     }
     setCells(next)
     setHintNotice(
-      '画像から作った答えに合わせ、ランダムな1マスを黒塗りまたは×で入れました。',
+      sourceMode === 'image'
+        ? '画像の答えに合わせ、ランダムな1マスを黒塗りまたは×で入れました。'
+        : 'おまかせ問題の答えに合わせ、ランダムな1マスを黒塗りまたは×で入れました。',
     )
-  }, [solution, cells, rowHints, colHints])
+  }, [solution, cells, rowHints, colHints, sourceMode])
 
   /** 行・列の論理だけで確定するマスに黒／×を一括入力 */
   const applyDeductions = useCallback(() => {
@@ -379,51 +418,124 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1 className="title">ピクロス（画像から作成）</h1>
+        <h1 className="title">ピクロスアート</h1>
         {solved && <div className="solved-badge">完成！</div>}
       </header>
 
       <div className="layout">
         <aside className="panel">
           <label className="field">
-            <span className="label">画像</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-            />
-          </label>
-          {loadError && <p className="error">{loadError}</p>}
-
-          <label className="field">
-            <span className="label">グリッド</span>
+            <span className="label">出題モード</span>
             <select
-              value={gridSize}
-              onChange={(e) =>
-                setGridSize(Number(e.target.value) as (typeof GRID_OPTIONS)[number])
-              }
+              value={sourceMode}
+              onChange={(e) => {
+                const v = e.target.value as 'image' | 'preset'
+                setSourceMode(v)
+                setDeductionNotice(null)
+                setHintNotice(null)
+                if (v === 'preset') {
+                  setHasImage(false)
+                  imgRef.current = null
+                  if (imgUrlRef.current) {
+                    URL.revokeObjectURL(imgUrlRef.current)
+                    imgUrlRef.current = null
+                  }
+                }
+              }}
             >
-              {GRID_OPTIONS.map((g) => (
-                <option key={g} value={g}>
-                  {g}×{g}
-                </option>
-              ))}
+              <option value="preset">おまかせの問題</option>
+              <option value="image">画像から作る</option>
             </select>
           </label>
 
-          <label className="field">
-            <span className="label">
-              しきい値（輝度）: <strong>{threshold}</strong>
-            </span>
-            <input
-              type="range"
-              min={0}
-              max={255}
-              value={threshold}
-              onChange={(e) => setThreshold(Number(e.target.value))}
-              disabled={!hasImage}
-            />
-          </label>
+          {sourceMode === 'preset' && (
+            <>
+              <label className="field">
+                <span className="label">盤のサイズ</span>
+                <select
+                  value={presetSide}
+                  onChange={(e) => {
+                    const n = Number(e.target.value)
+                    setPresetSide(n)
+                    const list = presetsForSide(n)
+                    setSelectedPresetId(list[0]?.id ?? '')
+                    setDeductionNotice(null)
+                    setHintNotice(null)
+                  }}
+                >
+                  {getAllPresetSides().map((n) => (
+                    <option key={n} value={n}>
+                      {n}×{n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span className="label">問題</span>
+                <select
+                  value={selectedPresetId}
+                  onChange={(e) => {
+                    setSelectedPresetId(e.target.value)
+                    setDeductionNotice(null)
+                    setHintNotice(null)
+                  }}
+                >
+                  {presetsForSide(presetSide).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
+
+          {sourceMode === 'image' && (
+            <>
+              <label className="field">
+                <span className="label">画像</span>
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+
+              <label className="field">
+                <span className="label">グリッド</span>
+                <select
+                  value={gridSize}
+                  onChange={(e) =>
+                    setGridSize(
+                      Number(e.target.value) as (typeof GRID_OPTIONS)[number],
+                    )
+                  }
+                >
+                  {GRID_OPTIONS.map((g) => (
+                    <option key={g} value={g}>
+                      {g}×{g}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="field">
+                <span className="label">
+                  しきい値（輝度）: <strong>{threshold}</strong>
+                </span>
+                <input
+                  type="range"
+                  min={0}
+                  max={255}
+                  value={threshold}
+                  onChange={(e) => setThreshold(Number(e.target.value))}
+                  disabled={!hasImage}
+                />
+              </label>
+            </>
+          )}
+
+          {loadError && <p className="error">{loadError}</p>}
 
           <p className="hint">
             タップで空白 → 黒 → ×。長押し後にドラッグで同じ状態をまとめて塗れます。
@@ -435,12 +547,12 @@ export default function App() {
               この問題は、同じヒントを満たす別の解が存在する可能性があります。論理だけでは元画像どおりに埋められないことがあります。
             </p>
           )}
-          {clueUniqueness === 'skipped' && hasImage && (
+          {clueUniqueness === 'skipped' && solution && (
             <p className="info-box">
               盤が大きいため、ヒントが1通りに決まるかの自動チェックを省略しています。
             </p>
           )}
-          {clueUniqueness === 'unique' && hasImage && (
+          {clueUniqueness === 'unique' && solution && (
             <p className="ok-box">このヒントでは、解は理論上1通りです。</p>
           )}
 
@@ -462,7 +574,11 @@ export default function App() {
             ヒントを1マス入れる
           </button>
           <p className="hint-1-note">
-            論理が難しいとき用です。画像から作った正解に合わせ、黒か×を1マスだけ自動で入れます（何度でも可）。
+            論理が難しいとき用です。
+            {sourceMode === 'image'
+              ? '画像から作った'
+              : 'このおまかせ問題の'}
+            正解に合わせ、黒か×を1マスだけ自動で入れます（何度でも可）。
           </p>
 
           <button
@@ -481,10 +597,14 @@ export default function App() {
         </aside>
 
         <div className="board-area" ref={boardWrapRef}>
-          {!hasImage && (
-            <div className="placeholder">画像を選ぶとここに盤面が表示されます</div>
+          {!solution && (
+            <div className="placeholder">
+              {sourceMode === 'image'
+                ? '画像を選ぶとここに盤面が表示されます'
+                : '問題を読み込み中です…'}
+            </div>
           )}
-          {hasImage && solution && cells && rowHints && colHints && (
+          {solution && cells && rowHints && colHints && (
             <div
               className="board"
               ref={boardRef}

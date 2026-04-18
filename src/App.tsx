@@ -19,7 +19,10 @@ import {
   nextStateXMode,
 } from './picross'
 
-const GRID_OPTIONS = [10, 15, 20] as const
+/** 盤の一辺のマス数（画像はこのサイズにリサイズされます） */
+const GRID_OPTIONS = [
+  5, 8, 10, 12, 15, 18, 20, 25, 30, 35, 40, 45, 50,
+] as const
 const LONG_PRESS_MS = 400
 
 const CELL_BORDER_THIN = 1

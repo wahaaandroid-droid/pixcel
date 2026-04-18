@@ -208,6 +208,16 @@ export default function App() {
     [xModeRef],
   )
 
+  /** テスト用：正解どおりに盤面を一括で埋める（白マスは空白） */
+  const revealSolution = useCallback(() => {
+    if (!solution) return
+    setCells(
+      solution.map((row) =>
+        row.map((black) => (black ? 1 : 0) as CellState),
+      ),
+    )
+  }, [solution])
+
   const hitCell = useCallback(
     (clientX: number, clientY: number): [number, number] | null => {
       const target = document.elementFromPoint(clientX, clientY)
@@ -338,6 +348,15 @@ export default function App() {
           <p className="hint">
             タップで空白 → 黒 → ×。長押し後にドラッグで同じ状態をまとめて塗れます。
           </p>
+
+          <button
+            type="button"
+            className="reveal-btn"
+            onClick={revealSolution}
+            disabled={!solution}
+          >
+            答えを一括表示（テスト用）
+          </button>
         </aside>
 
         <div className="board-area" ref={boardWrapRef}>
@@ -513,6 +532,21 @@ export default function App() {
           margin: 0;
           font-size: 0.8rem;
           color: #64748b;
+        }
+        .reveal-btn {
+          width: 100%;
+          margin-top: 4px;
+          padding: 10px 12px;
+          border-radius: 10px;
+          border: 1px solid #a16207;
+          background: #fef9c3;
+          color: #713f12;
+          font-weight: 700;
+          cursor: pointer;
+        }
+        .reveal-btn:disabled {
+          opacity: 0.45;
+          cursor: not-allowed;
         }
         .placeholder {
           align-self: center;
